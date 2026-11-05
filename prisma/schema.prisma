@@ -1,0 +1,135 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  student
+  admin
+
+  @@map("role")
+}
+
+/// ҰБТ informatics layout: 1–25 single, 26–30 context, 31–35 matching, 36–40 multiple.
+enum ItemType {
+  single
+  context
+  matching
+  multiple
+
+  @@map("item_type")
+}
+
+model User {
+  id           String   @id @default(uuid(7)) @db.Uuid
+  email        String   @unique @db.VarChar(254) /// stored lower-cased
+  passwordHash String   @map("password_hash")
+  name         String   @db.VarChar(100)
+  role         Role     @default(student)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  attempts Attempt[]
+  events   Event[]
+
+  @@map("users")
+}
+
+/// A mock exam: 40 items.
+model Variant {
+  id              String   @id @default(uuid(7)) @db.Uuid
+  title           String   @db.VarChar(200)
+  durationMinutes Int      @default(80) @map("duration_minutes")
+  isPublished     Boolean  @default(false) @map("is_published")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  items    Item[]
+  attempts Attempt[]
+
+  @@map("variants")
+}
+
+model Item {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  variantId   String   @map("variant_id") @db.Uuid
+  number      Int /// 1–40, CHECK constraint in migration
+  type        ItemType
+  topic       String   @db.VarChar(64) /// topic code, e.g. "number-systems"
+  points      Int /// 1 for single/context, 2 for matching/multiple
+  /// Public part shown during the attempt: text, code/table attachments, options. Never contains the answer.
+  body        Json     @db.JsonB
+  /// SERVER ONLY. Correct answer, never sent to the browser.
+  answerKey   Json     @map("answer_key") @db.JsonB
+  /// Explanation, shown only after the attempt is submitted.
+  explanation Json     @db.JsonB
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  variant Variant  @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  answers Answer[]
+  events  Event[]
+
+  @@unique([variantId, number])
+  @@index([topic])
+  @@map("items")
+}
+
+model Attempt {
+  id          String    @id @default(uuid(7)) @db.Uuid
+  userId      String    @map("user_id") @db.Uuid
+  variantId   String    @map("variant_id") @db.Uuid
+  startedAt   DateTime  @default(now()) @map("started_at") @db.Timestamptz(3)
+  deadlineAt  DateTime  @map("deadline_at") @db.Timestamptz(3) /// server-side timer
+  submittedAt DateTime? @map("submitted_at") @db.Timestamptz(3)
+  score       Int?
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  variant Variant  @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  answers Answer[]
+  events  Event[]
+
+  @@index([userId, startedAt(sort: Desc)])
+  @@index([variantId])
+  @@map("attempts")
+}
+
+model Answer {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  attemptId  String   @map("attempt_id") @db.Uuid
+  itemId     String   @map("item_id") @db.Uuid
+  response   Json     @db.JsonB
+  points     Int? /// set when the attempt is graded
+  answeredAt DateTime @default(now()) @updatedAt @map("answered_at") @db.Timestamptz(3)
+
+  attempt Attempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  item    Item    @relation(fields: [itemId], references: [id], onDelete: Restrict)
+
+  @@unique([attemptId, itemId])
+  @@index([itemId])
+  @@map("answers")
+}
+
+/// Append-only analytics log (attempt_started, answer_saved, attempt_submitted, ...).
+model Event {
+  id        BigInt   @id @default(autoincrement())
+  type      String   @db.VarChar(64)
+  userId    String?  @map("user_id") @db.Uuid
+  attemptId String?  @map("attempt_id") @db.Uuid
+  itemId    String?  @map("item_id") @db.Uuid
+  payload   Json     @default("{}") @db.JsonB
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user    User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  attempt Attempt? @relation(fields: [attemptId], references: [id], onDelete: SetNull)
+  item    Item?    @relation(fields: [itemId], references: [id], onDelete: SetNull)
+
+  @@index([type, createdAt])
+  @@index([userId, createdAt])
+  @@index([attemptId])
+  @@map("events")
+}

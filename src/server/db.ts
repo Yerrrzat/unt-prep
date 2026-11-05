@@ -5,11 +5,10 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@/generated/prisma/client";
 
 function createClient() {
-  const connectionString = process.env.DATABASE_URL;
-  if (!connectionString) throw new Error("DATABASE_URL is not set");
-
   return new PrismaClient({
-    adapter: new PrismaPg({ connectionString }),
+    // No connection is opened until the first query, so importing this during `next build` is safe.
+    // DATABASE_URL is validated at server start (src/instrumentation.ts).
+    adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
     // Secrets are opt-in per query: answer keys and explanations must never be loaded by accident
     // into data that reaches the browser, and the password hash only when verifying a login.
     omit: {

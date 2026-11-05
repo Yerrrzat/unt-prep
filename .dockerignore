@@ -1,0 +1,16 @@
+.git
+.github
+node_modules
+.next
+coverage
+src/generated
+*.tsbuildinfo
+next-env.d.ts
+npm-debug.log*
+.DS_Store
+# secrets never enter the build context
+.env
+.env.*
+!.env.example
+Dockerfile
+docker-compose*.yml

@@ -1,0 +1,52 @@
+# Local stack: PostgreSQL + migrations + app.
+#   cp .env.example .env   # set AUTH_SECRET
+#   docker compose up --build
+# The app's DATABASE_URL is overridden to reach the "db" service inside the compose network.
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: unt
+      POSTGRES_PASSWORD: unt
+      POSTGRES_DB: unt_prep
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U unt -d unt_prep"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  migrate:
+    build:
+      context: .
+      target: migrator
+    environment:
+      DATABASE_URL: postgresql://unt:unt@db:5432/unt_prep?schema=public
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  app:
+    build:
+      context: .
+      target: runner
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql://unt:unt@db:5432/unt_prep?schema=public
+      AUTH_SECRET: ${AUTH_SECRET:?Set AUTH_SECRET in .env (openssl rand -base64 32)}
+      AUTH_TRUST_HOST: "true"
+    ports:
+      - "3000:3000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  pgdata:
